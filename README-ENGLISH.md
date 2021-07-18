@@ -1,8 +1,7 @@
-(English instruction please see [README-ENGLISH.md](README-ENGLISH.md) )
-## jDbPro
+## EnhancedJDBC
 Open source agreement: [Apache 2.0] (http://www.apache.org/licenses/LICENSE-2.0)
 
-jDbPro is a JDBC persistence layer tool built on Apache Commons DbUtils and enhanced with dynamic SQL functionality. It is a project (packaging JDBC, supporting multiple SQL scripts) (as the ORM project kernel). But it is also a stand-alone tool that can be used alone, and its operating environment is Java6 or above.
+EnhancedJDBC is a JDBC persistence layer tool built on Apache Commons DbUtils and enhanced with dynamic SQL functionality. It is a project (packaging JDBC, supporting multiple SQL scripts) (as the ORM project kernel). But it is also a stand-alone tool that can be used alone, and its operating environment is Java6 or above.
 As the kernel of the ORM project, jDbPro only focuses on improving the ease of use of JDBC operations. It does not consider advanced functions such as object mapping, association mapping, cross-database, paging, etc. These advanced functions belong to the scope of ORM tools such as jSqlBox. jSqlBox is designed to design each function point as a separate small project, to isolate their interdependence, each small project can be used separately, integrated into jSqlBox, which will be all functions like Hibernate Persistence layer tools that are bundled together and cannot be used separately are different. The tool projects that have been developed under this concept are:  
 
 1. jDialects, which is a SQL paging, DDL support, and JPA support tool that supports more than 70 dialects. It is used to solve the problem of cross-database development using JDBC tools.  
@@ -17,7 +16,7 @@ Add the following line to the project's pom.xml file:
    <dependency>
       <groupId>com.github.drinkjava2</groupId>
       <artifactId>jdbpro</artifactId>
-      <version>3.0.0</version> <!-- or Maven latest version -->
+      <version>5.0.7.jre8</version> <!-- or Maven latest version -->
    </dependency>
 ```
 If there is no special reason (for example, if you want to develop your own ORM tool), it is generally not recommended to use jDbPro directly, but instead use jSqlBox because the latter is more complete.
@@ -27,6 +26,32 @@ jDbPro relies on DbUtils. If you use Maven, the DbUtils package commons-dbutils-
 Starting with version 3.0.0, jDbPro will no longer have its own documentation, as its functionality has been introduced in the user manual of jSqlBox, where n, i, p, t, and INLINE series methods are all inherited from DbPro。
 The following two lines are short examples. For more usuages, see jSqlBox user manual.
 ```
-DbPro dbPro = new DbPro(someDataSource);
-dbPro.nExecute("update users set name=?, address=?", "Sam", "Canada");
+public class HelloWorld  {
+	@Id
+	@Column(length = 20)
+	private String name;
+
+	public String getName() {
+		return name;
+	}
+
+	public HelloWorld setName(String name) {
+		this.name = name;
+		return this;
+	}
+
+	public static void main(String[] args) {
+		DataSource ds = JdbcConnectionPool
+				.create("jdbc:h2:mem:DBName;MODE=MYSQL;DB_CLOSE_DELAY=-1;TRACE_LEVEL_SYSTEM_OUT=0", "sa", "");
+		JdbcContext.setGlobalNextAllowShowSql(true);
+		JdbcContext ctx = new JdbcContext(ds);
+		JdbcContext.setGlobalDbContext(ctx);
+		ctx.executeDDL(ctx.toCreateDDL(HelloWorld.class)); 
+		
+		new HelloWorld().setName("Hellow jSqlBox");
+		JDBC.exe("insert into HelloWorld (name) values(?)",JDBC.par("tom"));
+		System.out.println(JDBC.qryString("select name from HelloWorld"));
+		ctx.executeDDL(ctx.toDropDDL(HelloWorld.class));
+	}
+}
 ```

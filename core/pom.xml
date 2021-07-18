@@ -4,7 +4,7 @@
  <groupId>com.github.drinkjava2</groupId>
  <artifactId>enhancedjdbc</artifactId>
  <packaging>jar</packaging>
- <version>5.0.7.jre8</version>  <!--not released-->
+ <version>5.0.7.jre8</version>
  
  <name>EnhancedJDBC</name>
  <description>EnhancedJDBC is an enhanced pure JDBC tool based on Apache-common-DbUtils</description>
