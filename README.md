@@ -1,7 +1,7 @@
 ## EnhancedJDBC
 开源协议: [Apache 2.0](http://www.apache.org/licenses/LICENSE-2.0)  
 
-EnhancedJDBC(前身为jDbPro)是一个建立于Apache Commons DbUtils上，并对其增强了动态SQL功能的JDBC持久层工具，它是一个承上(包装JDBC，支持多种SQL写法)启下(作为ORM项目内核)的项目，但它本身也是一个独立的工具，可以单独使用，其运行环境为Java6或以上。  
+EnhancedJDBC(又名jDbPro)是一个建立于Apache Commons DbUtils上，并对其增强了动态SQL功能的JDBC持久层工具，它是一个承上(包装JDBC，支持多种SQL写法)启下(作为ORM项目内核)的项目，但它本身也是一个独立的工具，可以单独使用，其运行环境为Java6或以上。  
 
 作为ORM项目的内核，EnhancedJDBC仅关注于改进JDBC操作的易用性，它不考虑对象映射、关联映射、数据库方言、分布式事务等高级功能，这些高级功能属于ORM工具如jSqlBox负责的范畴。jSqlBox的设计理念是尽量将每个功能点设计成独立的小项目，隔离它们的相互依赖性，每个小项目都可以单独使用，整合在一起就成了jSqlBox，这与Hibernate之类将JDBC、ORM功能捆绑在一起的持久层工具是不同的。目前在这一理念下已经开发的工具项目有：  
 1)jDialects，这是一个支持70多种方言的SQL分页、DDL支持、JPA支持工具，用于解决利用JDBC工具进行跨数据库开发的问题。  
