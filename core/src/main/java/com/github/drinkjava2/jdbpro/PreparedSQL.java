@@ -58,9 +58,6 @@ public class PreparedSQL {
 	/** Optional,The SQL parameters */
 	private Object[] params;
 
-	/** If set true, will use templateEngine to render SQL */
-	private Boolean useTemplate = null;
-
 	/** Optional, store a SqlTemplateEngine used only for this PreparedSQL */
 	private SqlTemplateEngine templateEngine;
 
@@ -77,13 +74,19 @@ public class PreparedSQL {
 	private List<Class<?>> disabledHandlers;
 
 	/** Store "SqlOption.Other" type SqlItem */
-	private List<SqlItem> others = null;
+	private List<Object[]> others = null;
 
 	/**
 	 * Designed for ORM program, if set true will ignore fields with null value in
 	 * insert & update methods
 	 */
 	private Boolean ignoreNull = null;
+
+	/**
+	 * Designed for ORM program, if set true will ignore fields with null value or
+	 * Empty String value in insert & update methods
+	 */
+	private Boolean ignoreEmpty = null;
 
 	/** TableModels, this is designed for ORM program */
 	private Object[] models;
@@ -120,7 +123,6 @@ public class PreparedSQL {
 		sb.append("\nconnection=").append(connection);
 		sb.append("\nresultSetHandler=").append(resultSetHandler);
 		sb.append("\nsqlHandlers=").append(sqlHandlers);
-		sb.append("\nuseTemplate=").append(useTemplate);
 		sb.append("\ntemplateEngine=").append(templateEngine);
 		sb.append("\ntemplateParams=").append(templateParamMap);
 		sb.append("\ndisabledHandlers=").append(disabledHandlers);
@@ -196,8 +198,7 @@ public class PreparedSQL {
 
 	public void addTemplateParam(SqlItem sp) {
 		if (sp.getParameters() == null || ((sp.getParameters().length % 2) != 0))
-			throw new DbProException(
-					"Put type template parameter should be key1, value1, key2,value2... format");
+			throw new DbProException("Put type template parameter should be key1, value1, key2,value2... format");
 		if (templateParamMap == null)
 			templateParamMap = new HashMap<String, Object>();
 		for (int i = 1; i <= sp.getParameters().length / 2; i++)
@@ -304,16 +305,10 @@ public class PreparedSQL {
 			this.operationType = type;
 	}
 
-	/** If current type is null, set with new type value */
-	public void ifNullSetUseTemplate(Boolean useTemplate) {
-		if (this.useTemplate == null)
-			this.useTemplate = useTemplate;
-	}
-
-	public void addOther(SqlItem obj) {
+	public void addOther(SqlItem item) {
 		if (others == null)
-			others = new ArrayList<SqlItem>();
-		others.add(obj);
+			others = new ArrayList<Object[]>();
+		others.add(item.getParameters());
 	}
 
 	/** if InlineStyle=true or SQL is empty, add as SQL, else add as parameter */
@@ -352,14 +347,6 @@ public class PreparedSQL {
 
 	public void setSql(String sql) {
 		this.sql = sql;
-	}
-
-	public Boolean getUseTemplate() {
-		return useTemplate;
-	}
-
-	public void setUseTemplate(Boolean useTemplate) {
-		this.useTemplate = useTemplate;
 	}
 
 	public SqlTemplateEngine getTemplateEngine() {
@@ -452,11 +439,11 @@ public class PreparedSQL {
 		this.entityNet = entityNet;
 	}
 
-	public List<SqlItem> getOthers() {
+	public List<Object[]> getOthers() {
 		return others;
 	}
 
-	public void setOthers(List<SqlItem> others) {
+	public void setOthers(List<Object[]> others) {
 		this.others = others;
 	}
 
@@ -474,6 +461,14 @@ public class PreparedSQL {
 
 	public void setIgnoreNull(Boolean ignoreNull) {
 		this.ignoreNull = ignoreNull;
+	}
+
+	public Boolean getIgnoreEmpty() {
+		return ignoreEmpty;
+	}
+
+	public void setIgnoreEmpty(Boolean ignoreEmpty) {
+		this.ignoreEmpty = ignoreEmpty;
 	}
 
 }

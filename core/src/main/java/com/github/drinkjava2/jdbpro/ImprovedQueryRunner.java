@@ -16,9 +16,7 @@
  */
 package com.github.drinkjava2.jdbpro;
 
-import java.sql.CallableStatement;
 import java.sql.Connection;
-import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -29,12 +27,16 @@ import javax.sql.DataSource;
 
 import org.apache.commons.dbutils.QueryRunner;
 import org.apache.commons.dbutils.ResultSetHandler;
+import org.apache.commons.dbutils.StatementConfiguration;
 import org.apache.commons.dbutils.handlers.ScalarHandler;
 
-import com.github.drinkjava2.jdbpro.log.DbProLog;
-import com.github.drinkjava2.jdbpro.log.DbProLogFactory;
-import com.github.drinkjava2.jdbpro.template.BasicSqlTemplate;
-import com.github.drinkjava2.jdbpro.template.SqlTemplateEngine;
+import com.github.drinkjava2.jdialects.Dialect;
+import com.github.drinkjava2.jdialects.converter.BasicJavaToJdbcConverter;
+import com.github.drinkjava2.jdialects.converter.BasicJdbcToJavaConverter;
+import com.github.drinkjava2.jdialects.converter.JavaToJdbcConverter;
+import com.github.drinkjava2.jdialects.converter.JdbcToJavaConverter;
+import com.github.drinkjava2.jlogs.Log;
+import com.github.drinkjava2.jlogs.LogFactory;
 import com.github.drinkjava2.jtransactions.ConnectionManager;
 import com.github.drinkjava2.jtransactions.DataSourceHolder;
 import com.github.drinkjava2.jtransactions.TxResult;
@@ -57,27 +59,39 @@ import com.github.drinkjava2.jtransactions.tinytx.TinyTxConnectionManager;
  */
 @SuppressWarnings({ "all" })
 public class ImprovedQueryRunner extends QueryRunner implements DataSourceHolder {
-	protected static final DbProLog logger = DbProLogFactory.getLog(ImprovedQueryRunner.class);
+	protected static final Log logger = LogFactory.getLog(ImprovedQueryRunner.class);
 
+	protected static Dialect globalNextDialect = null;
 	protected static Boolean globalNextAllowShowSql = false;
 	protected static SqlOption globalNextMasterSlaveOption = SqlOption.USE_AUTO;
 	protected static ConnectionManager globalNextConnectionManager = TinyTxConnectionManager.instance();
+	protected static JavaToJdbcConverter globalNextJavaToJdbcConverter = BasicJavaToJdbcConverter.instance;
+	protected static JdbcToJavaConverter globalNextJdbcToJavaConverter = BasicJdbcToJavaConverter.instance;
+	protected static TenantGetter globalNextTenantGetter = null;
+	protected static SqlItemHandler globalNextSqlItemHandler = null;
+	
 
 	protected static Integer globalNextBatchSize = 300;
-	protected static SqlTemplateEngine globalNextTemplateEngine = BasicSqlTemplate.instance();
 	protected static SqlHandler[] globalNextSqlHandlers = null;
 
-	protected SqlTemplateEngine sqlTemplateEngine = globalNextTemplateEngine;
 	protected ConnectionManager connectionManager = globalNextConnectionManager;
 	protected Boolean allowShowSQL = globalNextAllowShowSql;
 	protected SqlOption masterSlaveOption = globalNextMasterSlaveOption;
 	protected Integer batchSize = globalNextBatchSize;
 	protected SqlHandler[] sqlHandlers = globalNextSqlHandlers;
+	protected Dialect dialect = globalNextDialect;
+	protected JavaToJdbcConverter javaToJdbcConverter = globalNextJavaToJdbcConverter;
+	protected JdbcToJavaConverter jdbcToJavaConverter = globalNextJdbcToJavaConverter;
+	protected TenantGetter tenantGetter = globalNextTenantGetter;
+	protected SqlItemHandler sqlItemHandler = globalNextSqlItemHandler;
 
 	protected DbPro[] slaves;
 	protected DbPro[] masters;
 	protected String name; // A name for current runner
 	protected Integer dbCode = 0; // A unique code used to identify database
+
+	/** A ThreadLocal TxResult instance store last transation result */
+	private static ThreadLocal<TxResult> lastTxResult = new ThreadLocal<TxResult>();
 
 	/** A ThreadLocal SqlHandler instance */
 	private static ThreadLocal<SqlHandler[]> threadLocalSqlHandlers = new ThreadLocal<SqlHandler[]>();
@@ -110,14 +124,46 @@ public class ImprovedQueryRunner extends QueryRunner implements DataSourceHolder
 			return new ArrayList<PreparedSQL>();
 		}
 	};
+	
+	/** others store other infos writen in in-line sql */
+	private ThreadLocal<List<Object[]>> others = new ThreadLocal<List<Object[]>>();
 
 	public ImprovedQueryRunner() {
 		super();
+		this.dialect = globalNextDialect;
+		pmdKnownBroken = true; // MSSql Server newest JDBC driver doesnot support pmd
 	}
 
 	public ImprovedQueryRunner(DataSource ds) {
 		super(ds);
+		if (globalNextDialect != null)
+			dialect = globalNextDialect;
+		else
+			dialect = Dialect.guessDialect(ds);
+		pmdKnownBroken = true; // MSSql Server newest JDBC driver doesnot support pmd
 	}
+
+	public ImprovedQueryRunner(DataSource ds, Dialect dialect) {
+		super(ds);
+		this.dialect = dialect;
+		pmdKnownBroken = true; // MSSql Server newest JDBC driver doesnot support pmd
+	}
+	 
+	public ImprovedQueryRunner(DataSource ds, StatementConfiguration stmtConfig) {
+		super(ds, stmtConfig );
+		if (globalNextDialect != null)
+			dialect = globalNextDialect;
+		else
+			dialect = Dialect.guessDialect(ds);
+		pmdKnownBroken = true;
+	}
+
+	public ImprovedQueryRunner(DataSource ds, Dialect dialect, StatementConfiguration stmtConfig) {
+		super(ds, stmtConfig );
+		this.dialect = dialect;
+		pmdKnownBroken = true; 
+	}
+	
 
 	@Override
 	public Object getHolder() {// This is to implement DataSourceHolder interface
@@ -140,26 +186,6 @@ public class ImprovedQueryRunner extends QueryRunner implements DataSourceHolder
 			return connectionManager.getConnection(this);
 	}
 
-	@Override
-	protected CallableStatement prepareCall(Connection conn, String sql) throws SQLException {
-		if (this.getAllowShowSQL() && !batchEnabled.get())
-			logger.info(formatSqlForLoggerOutput(sql));
-		return super.prepareCall(conn, sql);
-	}
-
-	@Override
-	protected PreparedStatement prepareStatement(Connection conn, String sql) throws SQLException {
-		if (this.getAllowShowSQL() && !batchEnabled.get())
-			logger.info(formatSqlForLoggerOutput(sql));
-		return super.prepareStatement(conn, sql);
-	}
-
-	@Override
-	public void fillStatement(PreparedStatement stmt, Object... params) throws SQLException {
-		if (this.getAllowShowSQL() && !batchEnabled.get())
-			logger.info(formatParametersForLoggerOutput(params));
-		super.fillStatement(stmt, params);
-	}
 
 	// =========== Explain SQL about methods========================
 	/**
@@ -167,7 +193,7 @@ public class ImprovedQueryRunner extends QueryRunner implements DataSourceHolder
 	 * SQL format
 	 */
 	protected String formatSqlForLoggerOutput(String sql) {
-		return new StringBuilder(name == null ? "" : name).append(dbCode == null ? "" : dbCode).append(" SQL: ")
+		return new StringBuilder(name == null ? "" : name).append(dbCode <= 0 ? "" : dbCode + " ").append("SQL: ")
 				.append(sql).toString();
 	}
 
@@ -176,7 +202,7 @@ public class ImprovedQueryRunner extends QueryRunner implements DataSourceHolder
 	 * customise parameters format
 	 */
 	protected String formatParametersForLoggerOutput(Object... params) {
-		return new StringBuilder(name == null ? "" : name).append(dbCode == null ? "" : dbCode).append(" PAR: ")
+		return new StringBuilder(name == null ? "" : name).append(dbCode <= 0 ? "" : dbCode + " ").append("PAR: ")
 				.append(Arrays.deepToString(params)).toString();
 	}
 
@@ -404,37 +430,56 @@ public class ImprovedQueryRunner extends QueryRunner implements DataSourceHolder
 	 * return a result
 	 */
 	public Object runPreparedSQL(PreparedSQL ps) {
-		if (ps.getSwitchTo() != null) {
-			DbPro pro = ps.getSwitchTo();
-			ps.setSwitchTo(null);
-			return pro.runPreparedSQL(ps);// SwitchTo run
+	    if(this.tenantGetter!=null) {
+	        ImprovedQueryRunner runner=tenantGetter.getTenant();
+	        if(runner==null)
+	            throw new DbProException("tenantGetter can not return a null Object");
+	        return runner.runPreparedSQL(ps);
+	    }
+        if(ps.getSwitchTo() != null){
+            DbPro pro = ps.getSwitchTo();
+            ps.setSwitchTo(null);
+            return pro.runPreparedSQL(ps);// SwitchTo run
+        }
+		if (ps.getParams().length > 0) {
+			for (int i = 0; i < ps.getParams().length; i++) {
+				ps.getParams()[i] = javaToJdbcConverter.convert(ps.getParams()[i]);
+			}
 		}
 		if (ps.getMasterSlaveOption() == null)
 			ps.setMasterSlaveOption(this.getMasterSlaveOption());
 
-		if (ps.getUseTemplate() != null && ps.getUseTemplate()) {
-			ps.setUseTemplate(false);
-			SqlTemplateEngine engine = ps.getTemplateEngine();
-			if (engine == null)
-				engine = this.sqlTemplateEngine;
-			PreparedSQL rendered = engine.render(ps.getSql(), ps.getTemplateParamMap(), ps.getParams());
+		if (ps.getTemplateEngine()!=null) {
+			PreparedSQL rendered = ps.getTemplateEngine().render(ps.getSql(), ps.getTemplateParamMap(), ps.getParams());
 			ps.setSql(rendered.getSql());
 			ps.setParams(rendered.getParams());
+			ps.setTemplateEngine(null);
 		}
 
 		while (ps.getSqlHandlers() != null && !ps.getSqlHandlers().isEmpty()) {
 			SqlHandler handler = ps.getSqlHandlers().get(0);
 			ps.getSqlHandlers().remove(0);
-			if (!ps.isDisabledHandler(handler))
-				return handler.handle(this, ps);
+			if (!ps.isDisabledHandler(handler)) { 
+				return jdbcToJavaConverter.convert(handler.handle(this, ps));
+			}
 		}
-		return runRealSqlMethod(ps);
+		
+		others.remove();
+		if(ps.getOthers()!=null) { //has other info? store in threadLocal for user fetch
+			others.set(ps.getOthers());
+		}
+		return jdbcToJavaConverter.convert(runRealSqlMethod(ps)); 
 	}
 
 	/** Execute real SQL operation according PreparedSql's SqlType */
 	public Object runRealSqlMethod(PreparedSQL ps) {
 		if (ps.getOperationType() == null)
 			throw new DbProException("PreparedSQL's type not set");
+		
+	      if (this.getAllowShowSQL() && !batchEnabled.get()) {
+	            logger.info(formatSqlForLoggerOutput(ps.getSql()));
+	            logger.info(formatParametersForLoggerOutput(ps.getParams()));
+	      }
 
 		if (batchEnabled.get()) {
 			switch (ps.getOperationType()) {
@@ -757,7 +802,7 @@ public class ImprovedQueryRunner extends QueryRunner implements DataSourceHolder
 		}
 	}
 
-	private void specialStaticMethods_____________________() {// NOSONAR
+	private void specialMethods_____________________() {// NOSONAR
 	}
 
 	// ===override execute/insert/update methods to support batch and explainSql
@@ -793,6 +838,12 @@ public class ImprovedQueryRunner extends QueryRunner implements DataSourceHolder
 	public static SqlHandler[] getThreadLocalSqlHandlers() {
 		return threadLocalSqlHandlers.get();
 	}
+ 
+	
+	/** Get current thread's ThreadLocal SqlOption.Other type SqlItems */
+	public List<Object[]> getOthers() {
+		return others.get();
+	} 
 
 	/**
 	 * Set current thread's ThreadLocal SqlHandler
@@ -863,7 +914,47 @@ public class ImprovedQueryRunner extends QueryRunner implements DataSourceHolder
 		return this.getConnectionManager().rollbackTransaction();
 	}
 
+	protected void txTemplateMethods______________________________() {// NOSONAR
+	}
+
+	/**  */
+	public boolean tryTx(TxBody txBody) {
+		TxResult txResult;
+		this.startTrans();
+		try {
+			txBody.run();
+			lastTxResult.set(commitTrans());
+			return true;
+		} catch (Exception e) {
+			lastTxResult.set(rollbackTrans().addCommitEx(e));
+			return false;
+		}
+	}
+
+	public void tx(TxBody txBody) {
+		this.startTrans();
+		try {
+			txBody.run();
+			lastTxResult.set(commitTrans());
+		} catch (Exception e) {
+			lastTxResult.set(rollbackTrans().addCommitEx(e));
+			throw new DbProException(e);
+		}
+	}
+
+	public static TxResult getLastTxResult() {
+		return lastTxResult.get();
+	}
+
 	protected void staticGlobalNextMethods_____________________() {// NOSONAR
+	}
+
+	public static Dialect getGlobalNextDialect() {
+		return globalNextDialect;
+	}
+
+	public static void setGlobalNextDialect(Dialect dialect) {
+		globalNextDialect = dialect;
 	}
 
 	public static Integer getGlobalNextBatchSize() {
@@ -872,14 +963,6 @@ public class ImprovedQueryRunner extends QueryRunner implements DataSourceHolder
 
 	public static void setGlobalNextBatchSize(Integer batchSize) {
 		globalNextBatchSize = batchSize;
-	}
-
-	public static SqlTemplateEngine getGlobalNextTemplateEngine() {
-		return globalNextTemplateEngine;
-	}
-
-	public static void setGlobalNextTemplateEngine(SqlTemplateEngine sqlTemplateEngine) {
-		globalNextTemplateEngine = sqlTemplateEngine;
 	}
 
 	public static Boolean getGlobalNextAllowShowSql() {
@@ -914,7 +997,44 @@ public class ImprovedQueryRunner extends QueryRunner implements DataSourceHolder
 		globalNextSqlHandlers = sqlHandlers;
 	}
 
+	public static JavaToJdbcConverter getGlobalNextJavaToJdbcConverter() {
+		return globalNextJavaToJdbcConverter;
+	}
+
+	public static void setGlobalNextJavaToJdbcConverter(JavaToJdbcConverter globalNextJavaToJdbcConverter) {
+		ImprovedQueryRunner.globalNextJavaToJdbcConverter = globalNextJavaToJdbcConverter;
+	}
+
+	public static JdbcToJavaConverter getGlobalNextJdbcToJavaConverter() {
+		return globalNextJdbcToJavaConverter;
+	}
+
+	public static void setGlobalNextJdbcToJavaConverter(JdbcToJavaConverter globalNextJdbcToJavaConverter) {
+		ImprovedQueryRunner.globalNextJdbcToJavaConverter = globalNextJdbcToJavaConverter;
+	}
+
+    public static TenantGetter getGlobalNextTenantGetter() {
+        return globalNextTenantGetter;
+    }
+
+    public static void setGlobalNextTenantGetter(TenantGetter globalNextTenantGetter) {
+        ImprovedQueryRunner.globalNextTenantGetter = globalNextTenantGetter;
+    }
+    
+    public static void setGlobalNextSqlItemHandler(SqlItemHandler globalNextSqlItemHandler) {
+        ImprovedQueryRunner.globalNextSqlItemHandler = globalNextSqlItemHandler;
+    }
+
 	private void normalGetterSetters_____________________() {// NOSONAR
+	}
+
+	public Dialect getDialect() {
+		return dialect;
+	}
+
+	/** This method is not thread safe, suggest only use at program starting */
+	public void setDialect(Dialect dialect) {// NOSONAR
+		this.dialect = dialect;
 	}
 
 	public Boolean getAllowShowSQL() {
@@ -924,15 +1044,6 @@ public class ImprovedQueryRunner extends QueryRunner implements DataSourceHolder
 	/** This method is not thread safe, suggest only use at program starting */
 	public void setAllowShowSQL(Boolean allowShowSQL) {// NOSONAR
 		this.allowShowSQL = allowShowSQL;
-	}
-
-	public SqlTemplateEngine getSqlTemplateEngine() {
-		return sqlTemplateEngine;
-	}
-
-	/** This method is not thread safe, suggest only use at program starting */
-	public void setSqlTemplateEngine(SqlTemplateEngine sqlTemplateEngine) {
-		this.sqlTemplateEngine = sqlTemplateEngine;
 	}
 
 	public ConnectionManager getConnectionManager() {
@@ -999,6 +1110,44 @@ public class ImprovedQueryRunner extends QueryRunner implements DataSourceHolder
 	/** This method is not thread safe, suggest only use at program starting */
 	public void setName(String name) {
 		this.name = name;
+	} 
+	
+	public JavaToJdbcConverter getJavaToJdbcConverter() {
+		return javaToJdbcConverter;
+	}
+
+	/** This method is not thread safe, suggest only use at program starting */
+	public void setJavaToJdbcConverter(JavaToJdbcConverter javaToJdbcConverter) {
+		this.javaToJdbcConverter = javaToJdbcConverter;
+	}
+
+	public JdbcToJavaConverter getJdbcToJavaConverter() {
+		return jdbcToJavaConverter;
+	}
+
+	/** This method is not thread safe, suggest only use at program starting */
+	public void setJdbcToJavaConverter(JdbcToJavaConverter jdbcToJavaConverter) {
+		this.jdbcToJavaConverter = jdbcToJavaConverter;
+	}
+
+	/** This method is not thread safe, suggest only use at program starting */
+    public TenantGetter getTenantGetter() {
+        return tenantGetter;
+    }
+
+    /** This method is not thread safe, suggest only use at program starting */
+    public void setTenantGetter(TenantGetter tenantGetter) {
+        this.tenantGetter = tenantGetter;
+    }
+
+    /** This method is not thread safe, suggest only use at program starting */
+    public SqlItemHandler getSqlItemHandler() {
+		return sqlItemHandler;
+	}
+
+    /** This method is not thread safe, suggest only use at program starting */
+	public void setSqlItemHandler(SqlItemHandler sqlItemHandler) {
+		this.sqlItemHandler = sqlItemHandler;
 	}
 
 	public boolean isBatchEnabled() {

@@ -40,13 +40,6 @@ public enum SqlOption {
 	BIND,
 
 	/**
-	 * Mark a NOT_NULL SqlItem, Usage: NOT_NUL("user_name=?", name), when name is
-	 * null, nothing will be appended into SQL and parameters, otherwise return a
-	 * "user_name=?" String and a SQL parameter
-	 */
-	NOT_NULL,
-
-	/**
 	 * Mark a VALUES_QUESTIONS SqlItem, append a " values(?,?,?....?)" String at end
 	 * of SQL
 	 */
@@ -55,7 +48,7 @@ public enum SqlOption {
 	// ----------Special Items ------------
 	/**
 	 * Mark a ENABLE_HANDLERS SqlOption, switch to another DbPro or subClass
-	 * (SqlBoxContext) to execute SQL
+	 * (DbContext) to execute SQL
 	 */
 	SWITCHTO,
 
@@ -64,9 +57,6 @@ public enum SqlOption {
 
 	/** Mark a ENABLE_HANDLERS SqlOption, enable given handlers */
 	ENABLE_HANDLERS,
-
-	/** Mark a USE_TEMPLATE SqlOption, Force use template style */
-	USE_TEMPLATE,
 
 	// ------Sql Operation type--------
 	/** Mark a EXECUTE SqlOption */
@@ -87,7 +77,7 @@ public enum SqlOption {
 	/** Mark a QUERY SqlOption */
 	QUERY,
 
-	/** Mark a USE_SLAVE SqlItem, used to store some other items */
+	/** Mark a OTHER SqlItem, used to store some other items */
 	OTHER,
 
 	// =================================
@@ -134,6 +124,12 @@ public enum SqlOption {
 	 * ignore null fields
 	 */
 	IGNORE_NULL,
+
+	/**
+	 * Mark a IGNORE_EMPTY SqlOption, if true in ORM insert and update method will
+	 * ignore null Object and empty String fields
+	 */
+	IGNORE_EMPTY,
 
 	/** Mark a AUTO_SQL SqlOption, tell ORM to create left join SQL automatically */
 	AUTO_SQL,

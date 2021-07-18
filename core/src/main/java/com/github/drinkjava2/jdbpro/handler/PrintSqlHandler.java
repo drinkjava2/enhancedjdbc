@@ -15,7 +15,8 @@ import java.util.Arrays;
 
 import com.github.drinkjava2.jdbpro.DefaultOrderSqlHandler;
 import com.github.drinkjava2.jdbpro.ImprovedQueryRunner;
-import com.github.drinkjava2.jdbpro.PreparedSQL; 
+import com.github.drinkjava2.jdbpro.PreparedSQL;
+import com.github.drinkjava2.jdialects.StrUtils;
 
 /**
  * PaginHandler is the AroundSqlHandler used to translate SQL to paginated SQL
@@ -25,6 +26,15 @@ import com.github.drinkjava2.jdbpro.PreparedSQL;
  */
 @SuppressWarnings("all")
 public class PrintSqlHandler extends DefaultOrderSqlHandler {
+	private static boolean allowPrint = true;
+
+	public static boolean isAllowPrint() {
+		return allowPrint;
+	}
+
+	public static void setAllowPrint(boolean allowPrint) {
+		PrintSqlHandler.allowPrint = allowPrint;
+	}
 
 	@Override
 	public Object handle(ImprovedQueryRunner runner, PreparedSQL ps) {
@@ -33,27 +43,35 @@ public class PrintSqlHandler extends DefaultOrderSqlHandler {
 		sb.append("======PrintSqlHandler=========\n");
 		sb.append("| SQL:       " + ps.getSql()).append("\n");
 		sb.append("| Param:     " + Arrays.deepToString(ps.getParams())).append("\n");
-		long start = System.currentTimeMillis();
+		if (ps.getParams() != null && ps.getParams().length > 0) {
+			sb.append("| FullSQL:   ");
+			String s = ps.getSql();
+			for (int i = 0; i < 1000; i++) {
+				if (s.contains("?")) {
+					Object o = ps.getParams()[i];
+					if (o == null || o instanceof Number)
+						s = StrUtils.replaceFirst(s, "?", "" + o);
+					else
+						s = StrUtils.replaceFirst(s, "?", "'" + o + "'");
+				} else
+					break;
+			}
+			sb.append(s).append("\n");
+		}
+		
+		
+		if (allowPrint)
+			System.out.print(sb.toString());
+		sb.setLength(0);
+		long start = System.currentTimeMillis();		
 		Object obj = runner.runPreparedSQL(ps);
 		long end = System.currentTimeMillis();
-		StackTraceElement[] steArray = Thread.currentThread().getStackTrace();
-		for (StackTraceElement st : steArray) {
-			if (st.getClassName().contains("lang.Thread"))
-				continue;
-			if (st.getClassName().contains(".drinkjava2.jdbpro"))
-				continue;
-			if (st.getClassName().contains(".drinkjava2.jsqlbox"))
-				continue;
-			sb.append("| Location:  " + st.getClassName() + "." + st.getMethodName() + "(" + st.getFileName() + ":"
-					+ st.getLineNumber() + ")").append("\n");
-			break;
-		}
-
-		sb.append("| Time use:  " + (end - start) + "ms\n");
-		if (runner.getName()!=null && runner.getName().length()>0) 
-			 sb.append("| DB:        "+runner.getName()).append("\n");
+		sb.append("| TimeUsed:  " + (end - start) + "ms\n");
+		if (runner.getName() != null && runner.getName().length() > 0)
+			sb.append("| DB:        " + runner.getName()).append("\n");
 		sb.append("==============================");
-		System.out.println(sb.toString());
+		if (allowPrint)
+			System.out.println(sb.toString());
 		return obj;
 	}
 
